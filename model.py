@@ -84,17 +84,21 @@ class Transformer(nn.Module):
         d_k = d_model // num_heads
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.PE = PositionalEncoding(d_model)
+        self.ln1 = nn.LayerNorm(d_model)
         self.mh_attention = MultiHeadAttention(num_heads, d_k)
         self.FFN = FeedForward(d_model)
+        self.ln2 = nn.LayerNorm(d_model)
 
     def forward(self, seq):
         # seq is array of indices within the vocab corresponding to words in a sentence
         embeddings = self.embedding(seq)
         PEs = self.PE(embeddings)
         att_scores = self.mh_attention(PEs)
-        logits = self.FFN(att_scores)
+        att_scores_norm = self.ln1(att_scores + PEs)  # PEs are a residual connection at this point
+        logits = self.FFN(att_scores_norm)
+        logits_norm = self.ln2(logits + att_scores_norm)
 
-        return logits
+        return logits_norm
 
 
 if __name__ == "__main__":
@@ -103,4 +107,5 @@ if __name__ == "__main__":
     print(input_sequence)
     output_logits = model(input_sequence)
     print(output_logits.shape)
+    print(output_logits)
 
