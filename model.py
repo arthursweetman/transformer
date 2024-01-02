@@ -70,7 +70,7 @@ class FeedForward(nn.Module):
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_seq_len=max_seq_len):
-        super(PositionalEncoding, self).__init__()
+        super().__init__()
         pe = torch.zeros(max_seq_len, d_model)
         position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model))
@@ -80,7 +80,7 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return x + self.pe[:, :x.size(1)].detach()
+        return self.pe[:, :x.size(1)].detach()
 
 class TransformerBlock(nn.Module):
 
@@ -103,7 +103,7 @@ class TransformerBlock(nn.Module):
 
 class GPTDecoderModel(nn.Module):
 
-    def __init__(self, vocab_size=vocab_size, d_model=d_model, num_heads=4, N=6):
+    def __init__(self, vocab_size=vocab_size, d_model=d_model, num_heads=4):
         super().__init__()
         self.embeddings = nn.Embedding(vocab_size, d_model)
         self.PEs = PositionalEncoding(d_model)
@@ -115,7 +115,7 @@ class GPTDecoderModel(nn.Module):
 
     def forward(self, idx, targets=None):
         embeds = self.embeddings(idx)
-        pos_enc = self.PEs(idx)
+        pos_enc = self.PEs(idx)  # (B,T) --> (B,T,C)
         x = embeds + pos_enc
         x = self.decoder_blocks(x)
         x = self.ln_final(x)
