@@ -69,7 +69,7 @@ class FeedForward(nn.Module):
         return l2
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_seq_len=512):
+    def __init__(self, d_model, max_seq_len=max_seq_len):
         super(PositionalEncoding, self).__init__()
         pe = torch.zeros(max_seq_len, d_model)
         position = torch.arange(0, max_seq_len, dtype=torch.float).unsqueeze(1)
@@ -82,33 +82,71 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.pe[:, :x.size(1)].detach()
 
-class Transformer(nn.Module):
+class TransformerBlock(nn.Module):
 
-    def __init__(self, vocab_size, d_model, num_heads, is_decoder=False):
+    def __init__(self, d_model, num_heads, is_decoder=False):
         super().__init__()
         self.d_model = d_model
         d_k = d_model // num_heads
-        self.embedding = nn.Embedding(vocab_size, d_model)
-        self.PE = PositionalEncoding(d_model)
-        self.ln1 = nn.LayerNorm(d_model)
         self.mh_attention = MultiHeadAttention(num_heads, d_k, is_decoder)
         self.FFN = FeedForward(d_model)
+        self.ln1 = nn.LayerNorm(d_model)
         self.ln2 = nn.LayerNorm(d_model)
 
-    def forward(self, seq):
-        # seq is array of indices within the vocab corresponding to words in a sentence
-        embeddings = self.embedding(seq)
-        PEs = self.PE(embeddings)
-        att_scores = self.mh_attention(PEs)
-        att_scores_norm = self.ln1(att_scores + PEs)  # PEs are a residual connection at this point
-        logits = self.FFN(att_scores_norm)
-        logits_norm = self.ln2(logits + att_scores_norm)  # attention scores are a residual connection at this point
+    def forward(self, x):
+        x_norm = self.ln1(x)
+        att_scores = x + self.mh_attention(x_norm)  # x is the residual connection
+        att_scores_norm = self.ln2(att_scores)
+        logits = att_scores + self.FFN(att_scores_norm)  # attention scores are the residual connection
 
-        return logits_norm
+        return logits
+
+class GPTDecoderModel(nn.Module):
+
+    def __init__(self, vocab_size=vocab_size, d_model=d_model, num_heads=4, N=6):
+        super().__init__()
+        self.embeddings = nn.Embedding(vocab_size, d_model)
+        self.PEs = PositionalEncoding(d_model)
+        self.decoder_blocks = nn.Sequential(
+            TransformerBlock(d_model, num_heads, is_decoder=True)
+        )
+        self.ln_final = nn.LayerNorm(d_model)  # a final layernorm directly before the final linear layer
+        self.lin_final = nn.Linear(d_model, vocab_size)  # The final linear layer
+
+    def forward(self, idx, targets=None):
+        embeds = self.embeddings(idx)
+        pos_enc = self.PEs(idx)
+        x = embeds + pos_enc
+        x = self.decoder_blocks(x)
+        x = self.ln_final(x)
+        logits = self.lin_final(x)
+
+        if targets is None:
+            loss = None
+        else:
+            loss = self.loss(logits, targets)
+        return logits, loss
+
+    def loss(self, logits, targets):
+        B,T,C = logits.shape
+        logits = logits.view(B*T, C)
+        targets = targets.view(B*T)
+        loss = F.cross_entropy(logits, targets)
+        return loss
+
+    def generate(self, idx, max_new_tokens):
+        for _ in range(max_new_tokens):
+            idx_end = idx[:, -max_seq_len:]
+            logits, loss = self(idx_end)
+            logits = logits[:, -1, :]
+            probs = logits.softmax(dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat((idx, idx_next), dim=1)
+        return idx
 
 
 if __name__ == "__main__":
-    model = Transformer(vocab_size, d_model, num_heads=4, is_decoder=True)
+    model = TransformerBlock(d_model, num_heads=4, is_decoder=True)
     input_sequence = torch.randint(0, vocab_size, (1, 8))  # Batch size of 1, sequence length of 8
     print(input_sequence)
     output_logits = model(input_sequence)
