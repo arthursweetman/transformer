@@ -6,6 +6,7 @@ import math
 d_model=512
 d_ff = 2048
 dropout = 0.2
+vocab_size=10000
 
 class Head(nn.Module):
 
@@ -75,16 +76,31 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.pe[:, :x.size(1)].detach()
 
+class Transformer(nn.Module):
+
+    def __init__(self, vocab_size, d_model, num_heads):
+        super().__init__()
+        self.d_model = d_model
+        d_k = d_model // num_heads
+        self.embedding = nn.Embedding(vocab_size, d_model)
+        self.PE = PositionalEncoding(d_model)
+        self.mh_attention = MultiHeadAttention(num_heads, d_k)
+        self.FFN = FeedForward(d_model)
+
+    def forward(self, seq):
+        # seq is array of indices within the vocab corresponding to words in a sentence
+        embeddings = self.embedding(seq)
+        PEs = self.PE(embeddings)
+        att_scores = self.mh_attention(PEs)
+        logits = self.FFN(att_scores)
+
+        return logits
+
 
 if __name__ == "__main__":
-    x = torch.randn((1, 8, d_model))
-    print('input:', x)
-    att = MultiHeadAttention(4, 128)
-    scores = att(x)
-    print('scores:', scores.shape)
-    print(scores)
-    ffn = FeedForward(d_model, d_ff)
-    out_ffn = ffn(scores)
-    print('out_ffn', out_ffn.shape)
-    print(out_ffn)
+    model = Transformer(vocab_size, d_model, num_heads=4)
+    input_sequence = torch.randint(0, vocab_size, (1, 8))  # Batch size of 1, sequence length of 8
+    print(input_sequence)
+    output_logits = model(input_sequence)
+    print(output_logits.shape)
 
