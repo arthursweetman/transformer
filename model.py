@@ -7,14 +7,18 @@ d_model=512
 d_ff = 2048
 dropout = 0.2
 vocab_size=10000
+max_seq_len=8
 
 class Head(nn.Module):
 
-    def __init__(self, d_k: int):
+    def __init__(self, d_k: int, is_decoder):
         super().__init__()
+        self.is_decoder=is_decoder
         self.key = nn.Linear(d_model, d_k, bias=False)
         self.query = nn.Linear(d_model, d_k, bias=False)
         self.value = nn.Linear(d_model, d_k, bias=False)
+        if is_decoder:
+            self.register_buffer('tril', torch.tril(torch.ones(max_seq_len, max_seq_len)))
 
     def forward(self, x):
         # Calculate attention scores for one head
@@ -22,7 +26,9 @@ class Head(nn.Module):
         B,T,C = x.shape
         k = self.key(x)
         q = self.query(x)
-        scores = (q @ k.transpose(-2, -1)) / (k.shape[-1] ** 0.5)
+        scores = (q @ k.transpose(-2, -1)) / (C ** 0.5)
+        if self.is_decoder:
+            scores = scores.masked_fill(self.tril[:T,:T] == 0, float('-inf'))  # (B,T,T)
         scores = scores.softmax(dim=-1)
         v = self.value(x)
         scores = scores @ v
@@ -31,11 +37,11 @@ class Head(nn.Module):
 
 class MultiHeadAttention(nn.Module):
 
-    def __init__(self, num_heads, d_k):
+    def __init__(self, num_heads, d_k, is_decoder):
         super().__init__()
         self.num_heads = num_heads
         self.d_k = d_k
-        self.heads = nn.ModuleList(Head(d_k) for _ in range(num_heads))
+        self.heads = nn.ModuleList(Head(d_k, is_decoder) for _ in range(num_heads))
         self.w_o = nn.Linear(num_heads*d_k, d_model, bias=False)  # d_model should be equal to num_heads * d_k
 
     def forward(self, x):
@@ -78,14 +84,14 @@ class PositionalEncoding(nn.Module):
 
 class Transformer(nn.Module):
 
-    def __init__(self, vocab_size, d_model, num_heads):
+    def __init__(self, vocab_size, d_model, num_heads, is_decoder=False):
         super().__init__()
         self.d_model = d_model
         d_k = d_model // num_heads
         self.embedding = nn.Embedding(vocab_size, d_model)
         self.PE = PositionalEncoding(d_model)
         self.ln1 = nn.LayerNorm(d_model)
-        self.mh_attention = MultiHeadAttention(num_heads, d_k)
+        self.mh_attention = MultiHeadAttention(num_heads, d_k, is_decoder)
         self.FFN = FeedForward(d_model)
         self.ln2 = nn.LayerNorm(d_model)
 
@@ -96,13 +102,13 @@ class Transformer(nn.Module):
         att_scores = self.mh_attention(PEs)
         att_scores_norm = self.ln1(att_scores + PEs)  # PEs are a residual connection at this point
         logits = self.FFN(att_scores_norm)
-        logits_norm = self.ln2(logits + att_scores_norm)
+        logits_norm = self.ln2(logits + att_scores_norm)  # attention scores are a residual connection at this point
 
         return logits_norm
 
 
 if __name__ == "__main__":
-    model = Transformer(vocab_size, d_model, num_heads=4)
+    model = Transformer(vocab_size, d_model, num_heads=4, is_decoder=True)
     input_sequence = torch.randint(0, vocab_size, (1, 8))  # Batch size of 1, sequence length of 8
     print(input_sequence)
     output_logits = model(input_sequence)
