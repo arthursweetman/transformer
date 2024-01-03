@@ -4,10 +4,15 @@ from torch.nn import functional as F
 import math
 
 d_model=512
+num_heads = 8
 d_ff = 2048
 dropout = 0.2
-vocab_size=10000
-max_seq_len=8
+max_seq_len=16
+batch_size=8
+lr=3e-4
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+eval_iters = 200
+
 
 class Head(nn.Module):
 
@@ -103,11 +108,16 @@ class TransformerBlock(nn.Module):
 
 class GPTDecoderModel(nn.Module):
 
-    def __init__(self, vocab_size=vocab_size, d_model=d_model, num_heads=4):
+    def __init__(self, vocab_size, d_model=d_model, num_heads=4):
         super().__init__()
         self.embeddings = nn.Embedding(vocab_size, d_model)
         self.PEs = PositionalEncoding(d_model)
         self.decoder_blocks = nn.Sequential(
+            TransformerBlock(d_model, num_heads, is_decoder=True),
+            TransformerBlock(d_model, num_heads, is_decoder=True),
+            TransformerBlock(d_model, num_heads, is_decoder=True),
+            TransformerBlock(d_model, num_heads, is_decoder=True),
+            TransformerBlock(d_model, num_heads, is_decoder=True),
             TransformerBlock(d_model, num_heads, is_decoder=True)
         )
         self.ln_final = nn.LayerNorm(d_model)  # a final layernorm directly before the final linear layer
@@ -147,7 +157,7 @@ class GPTDecoderModel(nn.Module):
 
 if __name__ == "__main__":
     model = TransformerBlock(d_model, num_heads=4, is_decoder=True)
-    input_sequence = torch.randint(0, vocab_size, (1, 8))  # Batch size of 1, sequence length of 8
+    input_sequence = torch.randint(0, 65, (1, 8))  # Batch size of 1, sequence length of 8
     print(input_sequence)
     output_logits = model(input_sequence)
     print(output_logits.shape)
