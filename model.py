@@ -7,12 +7,10 @@ d_model=512
 num_heads = 8
 d_ff = 2048
 dropout = 0.2
-max_seq_len=16
-batch_size=8
+max_seq_len=256
+batch_size=64
 lr=3e-4
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
 eval_iters = 200
-
 
 class Head(nn.Module):
 
@@ -24,6 +22,7 @@ class Head(nn.Module):
         self.value = nn.Linear(d_model, d_k, bias=False)
         if is_decoder:
             self.register_buffer('tril', torch.tril(torch.ones(max_seq_len, max_seq_len)))
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         # Calculate attention scores for one head
@@ -35,6 +34,7 @@ class Head(nn.Module):
         if self.is_decoder:
             scores = scores.masked_fill(self.tril[:T,:T] == 0, float('-inf'))  # (B,T,T)
         scores = scores.softmax(dim=-1)
+        scores = self.dropout(scores)
         v = self.value(x)
         scores = scores @ v
 
@@ -48,12 +48,13 @@ class MultiHeadAttention(nn.Module):
         self.d_k = d_k
         self.heads = nn.ModuleList(Head(d_k, is_decoder) for _ in range(num_heads))
         self.w_o = nn.Linear(num_heads*d_k, d_model, bias=False)  # d_model should be equal to num_heads * d_k
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         if x.shape[-1] != self.num_heads*self.d_k:
             raise ValueError(f"Embedding length of input is not equal to num_heads*d_k: {x.shape[-1]} != {self.num_heads * self.d_k}.")
         scores = torch.cat([attention(x) for attention in self.heads], dim=-1)
-        scores = self.w_o(scores)
+        scores = self.dropout(self.w_o(scores))
         return scores
 
 class FeedForward(nn.Module):
@@ -63,6 +64,7 @@ class FeedForward(nn.Module):
         self.d_model = d_model
         self.layer1 = nn.Linear(d_model, d_ff)
         self.layer2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         if x.shape[-1] != self.d_model:
@@ -71,7 +73,8 @@ class FeedForward(nn.Module):
         l1 = self.layer1(x)
         out1 = torch.relu(l1)
         l2 = self.layer2(out1)
-        return l2
+        out = self.dropout(l2)
+        return out
 
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_seq_len=max_seq_len):
@@ -108,7 +111,7 @@ class TransformerBlock(nn.Module):
 
 class GPTDecoderModel(nn.Module):
 
-    def __init__(self, vocab_size, d_model=d_model, num_heads=4):
+    def __init__(self, vocab_size, d_model=d_model, num_heads=num_heads):
         super().__init__()
         self.embeddings = nn.Embedding(vocab_size, d_model)
         self.PEs = PositionalEncoding(d_model)
@@ -156,7 +159,7 @@ class GPTDecoderModel(nn.Module):
 
 
 if __name__ == "__main__":
-    model = TransformerBlock(d_model, num_heads=4, is_decoder=True)
+    model = TransformerBlock(d_model, num_heads=num_heads, is_decoder=True)
     input_sequence = torch.randint(0, 65, (1, 8))  # Batch size of 1, sequence length of 8
     print(input_sequence)
     output_logits = model(input_sequence)
