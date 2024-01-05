@@ -9,7 +9,7 @@ The model can output infinite Shakespeare-esque text. Full words are outputted a
 
 The point here is to show that the architecture I have implemented has been successful. And my intention is to expand on this project in the future to perform bigger and better tasks.
 
- Feel free to visit [my website](https://www.arthur-sweetman.com/artificial-intelligence) to generate infinite Shakespeare using this trained LLM.
+ Feel free to visit [my website](https://www.arthur-sweetman.com/#/artificial-intelligence) to generate infinite Shakespeare using this trained LLM.
 
 ```
 Are my light-trial in thy lip,
